@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Project output
+output/
+downloads/
+state/
+footage/
+shots.json
+
+# Media and logs
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.log
+*.jpg
+*.jpeg
+*.png
+
+# System
+.DS_Store
+Thumbs.db
