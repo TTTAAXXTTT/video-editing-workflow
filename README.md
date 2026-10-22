@@ -1,5 +1,12 @@
 # Video Editing Workflow
 
+## 直接下载使用
+
+**[下载 Windows x64 便携版 v0.1.1](https://github.com/TTTAAXXTTT/video-editing-workflow/releases/download/v0.1.1/video-editing-workflow-Windows-x64-v0.1.1.zip)** · [发布说明及 SHA-256 校验](https://github.com/TTTAAXXTTT/video-editing-workflow/releases/tag/v0.1.1)
+
+完整解压后通过 `VideoWorkflow.cmd grid|clips|join|verify` 加参数运行。已包含 Python、Pillow、FFmpeg、FFprobe 和 x264，无需另行安装编程环境或 FFmpeg。
+
+
 一套面向旅行、Vlog、运动相机素材的个人视频剪辑工作流和可复用脚本。项目覆盖素材审查、选镜、裁剪调色、柔和转场拼接，以及成片终验，适合需要批量处理大体积素材、但希望保持流程可复现的场景。
 
 ## 适用场景
@@ -229,3 +236,4 @@ bash scripts/download_watchdog.sh
 ## License
 
 [MIT](./LICENSE)
+
