@@ -51,7 +51,7 @@ jobs:
     env:
       PYTHONUTF8: '1'
       RELEASE_REPO: video-editing-workflow
-      RELEASE_VERSION: v0.1.1
+      RELEASE_VERSION: v0.2.0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -119,24 +119,36 @@ jobs:
 
           runtime = dest / 'runtime' / 'python'
           packages = dest / 'runtime' / 'packages'
-          runtime.mkdir(parents=True)
+          packages.parent.mkdir(parents=True, exist_ok=True)
           packages.mkdir()
-          python_zip = OUT / 'python-3.12.10-embed-amd64.zip'
-          download('https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip', python_zip)
-          with zipfile.ZipFile(python_zip) as z:
-              z.extractall(runtime)
-          (runtime / 'python312._pth').write_text('python312.zip\n.\n../packages\n../..\nimport site\n', encoding='ascii')
+          installer = OUT / 'python-3.12.10-amd64.exe'
+          download('https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe', installer)
+          local_python = OUT / 'local-python'
+          subprocess.run([
+              str(installer), '/quiet', 'InstallAllUsers=0', f'TargetDir={local_python}',
+              'Include_pip=1', 'Include_tcltk=1', 'Include_test=0', 'Include_launcher=0',
+              'AssociateFiles=0', 'Shortcuts=0', 'PrependPath=0',
+          ], check=True)
+          shutil.copytree(local_python, runtime)
           provenance = {'repository': REPO, 'version': VERSION, 'commit': os.environ['GITHUB_SHA'],
-                        'python': '3.12.10', 'python_zip_sha256': hashlib.sha256(python_zip.read_bytes()).hexdigest()}
-          if (source / 'requirements.txt').is_file():
-              run(sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', '--no-compile', '--target', packages, '-r', source / 'requirements.txt', cwd=source)
+                        'python': '3.12.10', 'python_installer_sha256': hashlib.sha256(installer.read_bytes()).hexdigest()}
           python = runtime / 'python.exe'
+          if (source / 'requirements.txt').is_file():
+              run(python, '-m', 'pip', 'install', '--disable-pip-version-check', '--no-compile',
+                  '--target', packages, '-r', source / 'requirements.txt', cwd=source)
           clean_env = {k: v for k, v in os.environ.items() if k not in {'PYTHONHOME', 'PYTHONPATH'}}
           clean_env['PYTHONUTF8'] = '1'
           clean_env['PYTHONNOUSERSITE'] = '1'
+          clean_env['PYTHONPATH'] = str(packages)
+          clean_env['PATH'] = str(runtime) + ';' + str(runtime / 'DLLs') + ';' + os.environ.get('PATH', '')
 
           def cmd(filename, body):
-              (dest / filename).write_text('@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nset "PATH=%~dp0runtime\\python;%~dp0tools\\ffmpeg;%PATH%"\r\n' + body.replace('\n', '\r\n') + '\r\n', encoding='utf-8')
+              (dest / filename).write_text(
+                  '@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\n'
+                  'set "PYTHONPATH=%~dp0runtime\\packages;%PYTHONPATH%"\r\n'
+                  'set "PATH=%~dp0runtime\\python;%~dp0runtime\\python\\DLLs;%~dp0tools\\ffmpeg;%PATH%"\r\n'
+                  + body.replace('\n', '\r\n') + '\r\n', encoding='utf-8'
+              )
 
           def smoke_http(arguments, url, expected, cwd=dest):
               log = OUT / ('smoke-' + REPO + '.log')
@@ -198,6 +210,18 @@ jobs:
               shutil.copytree(BASE / 'ffmpeg-artifact', dest / 'tools/ffmpeg')
               (dest / 'portable_video.py').write_text('''import os,runpy,sys\nfrom pathlib import Path\nroot=Path(__file__).resolve().parent\nos.environ['PATH']=str(root/'tools/ffmpeg')+os.pathsep+os.environ.get('PATH','')\ncommands={'grid':'make_grid.py','clips':'make_clips.py','join':'join.py','verify':'verify_final.py'}\nif len(sys.argv)<2 or sys.argv[1] not in commands:\n print('Usage: VideoWorkflow.cmd grid|clips|join|verify [arguments]');raise SystemExit(2)\nscript=root/'scripts'/commands[sys.argv[1]]\nsys.argv=[str(script)]+sys.argv[2:]\nrunpy.run_path(str(script),run_name='__main__')\n''', encoding='utf-8')
               cmd('VideoWorkflow.cmd', '"%~dp0runtime\\python\\python.exe" -E -X utf8 "%~dp0portable_video.py" %*\nif errorlevel 1 pause')
+              cmd('启动图形界面.cmd', 'start "" "%~dp0runtime\\python\\python.exe" -E -X utf8 "%~dp0scripts\\gui.py"')
+              run(python, '-c', 'import tkinter as tk; root=tk.Tk(); root.after(100, root.destroy); root.mainloop()', cwd=dest, env=clean_env)
+              gui_process = subprocess.Popen(
+                  [python, 'scripts/gui.py', '--no-popup'], cwd=dest, env=clean_env,
+                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+              )
+              time.sleep(5)
+              if gui_process.poll() is not None:
+                  output = gui_process.stdout.read()
+                  raise RuntimeError('GUI smoke test failed: ' + output)
+              gui_process.terminate()
+              gui_process.wait(timeout=10)
               for executable in ['ffmpeg.exe', 'ffprobe.exe']:
                   run(dest / 'tools/ffmpeg' / executable, '-version')
               scratch = OUT / 'video-smoke'
@@ -209,20 +233,21 @@ jobs:
               run(python, dest / 'portable_video.py', 'clips', '--src', scratch, '--work', scratch / 'clips', '--shots', scratch / 'shots.json', '--duration', '1', '--width', '320', '--height', '180', '--fps', '10', '--preset', 'ultrafast', cwd=dest, env=clean_env)
               run(python, dest / 'portable_video.py', 'verify', scratch / 'clips/c00.mp4', scratch / 'check.jpg', cwd=dest, env=clean_env)
               assert (scratch / 'check.jpg').is_file()
-              instructions = '完整解压。本包自带 Windows x64 Python、Pillow、FFmpeg 和 FFprobe，打开终端运行 VideoWorkflow.cmd grid|clips|join|verify 加 README 中对应参数。例：VideoWorkflow.cmd grid footage grid.jpg。无需安装编程环境或 FFmpeg。tools/ffmpeg/sources 包含对应 FFmpeg、x264 源码，构建配置位于仓库发布工作流。'
+              instructions = '完整解压。双击“启动图形界面.cmd”可打开图形界面；也可运行 VideoWorkflow.cmd grid|clips|join|verify 加 README 中对应参数。例：VideoWorkflow.cmd grid footage grid.jpg。本包自带 Windows x64 Python、Pillow、Tkinter、FFmpeg 和 FFprobe，无需安装编程环境或 FFmpeg。tools/ffmpeg/sources 包含对应 FFmpeg、x264 源码，构建配置位于仓库发布工作流。'
           else:
               raise RuntimeError(REPO)
 
-          (dest / '使用说明-先读.txt').write_text(instructions + '\n\n保留 runtime 目录，勿只复制启动文件。请在有写入权限的目录完整解压。\n', encoding='utf-8-sig')
+          (dest / '使用说明-先读.txt').write_text(instructions + '\n\n保留 runtime 目录，勿只复制启动文件。请在有写入权限的目录完整解压。\n', encoding='utf-8')
           (dest / 'BUILD-INFO.json').write_text(json.dumps(provenance, indent=2), encoding='utf-8')
-          run(python, '-m', 'compileall', '-q', dest, cwd=dest, env=clean_env)
+          run(python, '-m', 'compileall', '-q', dest / 'scripts', dest / 'portable_video.py',
+              cwd=dest, env=clean_env)
           run(python, '-m', 'pip', '--version', cwd=dest, env=clean_env) if False else None
           with zipfile.ZipFile(OUT / (name + '.zip'), 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:
               for file in dest.rglob('*'):
                   if file.is_file():
                       z.write(file, file.relative_to(OUT))
           digest = hashlib.sha256((OUT / (name + '.zip')).read_bytes()).hexdigest()
-          (OUT / 'SHA256SUMS.txt').write_text(digest + '  ' + name + '.zip\n', encoding='ascii')
+          (OUT / 'SHA256SUMS.txt').write_text(digest + '  ' + name + '.zip\n', encoding='utf-8')
           print('VERIFIED PORTABLE RELEASE:', name + '.zip', digest)
           PY
       - name: Publish verified download
@@ -231,8 +256,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! gh release view v0.1.1 >/dev/null 2>&1; then
-            gh release create v0.1.1 --target "$GITHUB_SHA" --draft --title "视频剪辑工作流 v0.1.1 · Windows 便携版" --notes '下载 video-editing-workflow-Windows-x64-v0.1.1.zip 并完整解压。已包含 Windows x64 Python 运行环境及应用依赖，不需要安装 Python/Node。使用根目录启动 CMD，详见包内“使用说明-先读.txt”。经过源码回归与包内运行时启动核验；账号、模型及设备依赖仍由使用者配置。 包含从对应源码编译的 FFmpeg/FFprobe 和 x264；对应源码与许可一并提供。'
+          if ! gh release view v0.2.0 >/dev/null 2>&1; then
+            gh release create v0.2.0 --target "$GITHUB_SHA" --draft --title "视频剪辑工作流 v0.2.0 · Windows 便携版" --notes '下载 video-editing-workflow-Windows-x64-v0.2.0.zip 并完整解压。双击“启动图形界面.cmd”可打开图形界面；也可使用 VideoWorkflow.cmd。已包含 Windows x64 Python、Tkinter、Pillow、FFmpeg、FFprobe 和 x264，不需要另行安装编程环境或 FFmpeg。详见包内“使用说明-先读.txt”。包含从对应源码编译的 FFmpeg/FFprobe 和 x264；对应源码与许可一并提供。'
           fi
-          gh release upload v0.1.1 release/video-editing-workflow-Windows-x64-v0.1.1.zip release/SHA256SUMS.txt --clobber
-          gh release edit v0.1.1 --draft=false --latest
+          gh release upload v0.2.0 release/video-editing-workflow-Windows-x64-v0.2.0.zip release/SHA256SUMS.txt --clobber
+          gh release edit v0.2.0 --draft=false --latest

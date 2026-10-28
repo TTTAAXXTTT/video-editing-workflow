@@ -21,6 +21,7 @@ shots.json
 *.jpg
 *.jpeg
 *.png
+!assets/screenshot.png
 
 # System
 .DS_Store

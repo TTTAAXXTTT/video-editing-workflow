@@ -9,6 +9,8 @@
 
 一套面向旅行、Vlog、运动相机素材的个人视频剪辑工作流和可复用脚本。项目覆盖素材审查、选镜、裁剪调色、柔和转场拼接，以及成片终验，适合需要批量处理大体积素材、但希望保持流程可复现的场景。
 
+![视频剪辑工作流界面](./assets/screenshot.png)
+
 ## 适用场景
 
 - 旅行记录、摩旅、骑行、徒步、户外运动视频。
@@ -21,6 +23,7 @@
 
 | 阶段 | 脚本 | 作用 |
 |---|---|---|
+| 图形界面 | `scripts/gui.py` | 路径选择、任务执行、日志查看和署名展示 |
 | 看片 | `scripts/make_grid.py` | 对每个视频抽帧并生成总览网格 |
 | 精剪 | `scripts/make_clips.py` | 按镜头清单裁剪、统一规格并调色 |
 | 拼接 | `scripts/join.py` | 使用 `xfade` 生成柔和淡接和首尾淡入淡出 |
@@ -38,14 +41,18 @@
 │   │   ├── config.yml
 │   │   └── feature_request.md
 │   └── PULL_REQUEST_TEMPLATE.md
+├── assets/
+│   └── screenshot.png
 ├── references/
 │   ├── full-workflow.md          # 完整实战复盘
 │   └── troubleshooting.md        # 问题排查手册
 ├── scripts/
 │   ├── download_watchdog.sh
+│   ├── gui.py
 │   ├── join.py
 │   ├── make_clips.py
 │   ├── make_grid.py
+│   ├── make_screenshot.sh
 │   ├── recover.sh
 │   └── verify_final.py
 ├── SKILL.md                      # 工作流技能说明
@@ -63,15 +70,17 @@
 ## 环境要求
 
 - Python 3.9+
+- Tkinter（图形界面）
 - FFmpeg（包含 `ffmpeg` 和 `ffprobe`）
 - Pillow
+- 可选：ImageMagick，用于生成界面截图
 - 可选：Debian/Ubuntu，用于运行百度网盘客户端恢复脚本
 
 安装 FFmpeg：
 
 ```bash
 # Debian/Ubuntu
-sudo apt-get update && sudo apt-get install -y ffmpeg
+sudo apt-get update && sudo apt-get install -y ffmpeg python3-tk imagemagick
 
 # macOS
 brew install ffmpeg
@@ -84,6 +93,14 @@ python3 -m pip install -r requirements.txt
 ```
 
 ## 快速开始
+
+启动图形界面：
+
+```bash
+python3 scripts/gui.py
+```
+
+命令行流程：
 
 1. 将视频素材放入 `footage/`。
 2. 复制并编辑镜头清单：

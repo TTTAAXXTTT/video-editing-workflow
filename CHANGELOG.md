@@ -2,6 +2,17 @@
 
 本项目遵循语义化版本命名，记录每个版本的重要变更。
 
+## 0.2.0 - 2026-10-28
+
+### Added
+
+- 新增 Tkinter 图形界面 `scripts/gui.py`。
+- 新增启动署名弹窗。
+- 新增主界面署名信息。
+- 新增无弹窗界面截图 `assets/screenshot.png`。
+- 新增截图脚本 `scripts/make_screenshot.sh`。
+- Windows 便携版新增 Tkinter 运行支持和图形界面启动脚本。
+
 ## 0.1.0 - 2026-10-19
 
 ### Added
